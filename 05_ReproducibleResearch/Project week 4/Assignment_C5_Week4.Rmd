@@ -1,0 +1,193 @@
+---
+title: "Severe weather events and their consequences in the United States"
+author: "Hiba"
+date: "14/03/2020"
+output:
+  html_document: 
+    keep_md: yes
+---
+
+
+## Synopsis  
+  
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities.   
+  
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks estimates of any fatalities, injuries, and property damage.    
+  
+The data analysis shows how **Tornado** is the type of event that is most threatening to the population health, and thet **Floods** cause the biggest damage on the economy.    
+
+
+
+## Data Processing  
+    
+      
+       
+  
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.  
+  
+Using the URL adress, we first dowload the raw data which comes in the form of a comma-separated-value file compressed via the bzip2 algorithm to reduce its size:  
+  
+  
+```{r loading, warning=FALSE , message=F, cache=T}
+if (!file.exists("file.csv.bz2")){
+  fileURL <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+  download.file(fileURL, "file.csv.bz2", method="curl")
+  raw_data <- read.csv("file.csv.bz2")
+}
+
+
+```
+## Data Analysing  
+
+Let's first have a look at what our data contains:
+```{r , warning=FALSE , message=F, cache=T}
+dim(raw_data)
+```
+
+```{r , warning=FALSE , message=F, cache=T}
+names(raw_data)
+```
+
+  
+  
+```{r , warning=FALSE , message=F, cache=T}
+str(raw_data)
+```
+
+### Across the United States, which types of events (as indicated in the `EVTYPE` variable) are most harmful with respect to population health?
+  
+  To adress this question, I'll create a subset from the data, extracting:
+  - `EVTYPE` column in order to get the different types of events;
+  - `FATALITIES` column to get number of fatalities caused by the event;
+  - `INJURIES` column to get number of injuries caused by the event;
+
+
+```{r , warning=FALSE , message=F, cache=T}
+sub1 <- raw_data[c("EVTYPE", "FATALITIES", "INJURIES")]
+str(sub1)
+```
+
+
+
+
+```{r , warning=FALSE , message=F, cache=T}
+sub1_ag <- aggregate(.~EVTYPE, data=sub1, sum)
+head(sub1_ag)
+```
+  
+  We've got in each row in the `sub1_ag` dataframe a specific event with the corresponding total number of fatalities and injuries.
+  
+  Since the number of fatalities and injuries are correlated, I'll first drop the rows of events with small threat on the population health (less than **10** victims), and use information from summary in order to set a threshold on the number of injuries before I plot into a bar plot the data corresponding to the most harmful events: 
+
+
+```{r , warning=FALSE , message=F, cache=T}
+sub1_ag1 <- subset(sub1_ag, INJURIES>10 & FATALITIES>10)
+summary(sub1_ag1)
+```
+
+I'll set the threshold on the `INJURIES` to **272**, the third quantile:
+
+```{r , warning=FALSE , message=F, cache=T}
+sub1_ag2 <- subset(sub1_ag, INJURIES>1206)
+summary(sub1_ag2)
+```
+```{r , warning=FALSE , message=F, cache=T}
+dim(sub1_ag2)
+```
+Now that I have only 12 types left, let's move to the bar plot:
+  
+
+```{r , warning=FALSE , message=F, cache=T}
+library(reshape2)
+sub1_ag3 <- melt(sub1_ag2[,c('EVTYPE','FATALITIES','INJURIES')],id.vars = 1)
+names(sub1_ag3) <- c("Event_type", "type_victims", "number_victims")
+library(ggplot2)
+ggplot(sub1_ag3,aes(x = Event_type,y = number_victims)) + 
+    geom_bar(aes(fill = type_victims),stat = "identity",position = "dodge") + 
+    theme(axis.text.x = element_text(angle = 90))+
+    ggtitle("Plot 1: Total number of injuries and fatalities caused\n by the 12 most dangerous event types") +
+      xlab("Most threatening event types") + ylab("Total number of injuries / fatalities")
+
+```
+
+I'll modify the scale to log10 in order to gain more visibility:
+```{r , warning=FALSE , message=F, cache=T}
+ggplot(sub1_ag3,aes(x = Event_type,y = number_victims)) + 
+    geom_bar(aes(fill = type_victims),stat = "identity",position = "dodge") + 
+    scale_y_log10()+ theme(axis.text.x = element_text(angle = 90))+
+    ggtitle("Plot 2: Total number of injuries and fatalities caused\n by the 12 most dangerous event types") +
+      xlab("Most threatening event types") + ylab("Total number of injuries / fatalities")
+```
+  
+### Across the United States, which types of events have the greatest economic consequences?  
+    
+To answer this question, I need to use the column `PROPDMG` to get the Property damage estimates rounded to
+three significant digits, and the `PROPDMGEXP`to get an alphabetical character signifying the magnitude of the estimated damage
+
+```{r , warning=FALSE , message=F, cache=T}
+table(raw_data$PROPDMGEXP)
+```
+
+Alphabetical characters used to signify magnitude
+include “K” for thousands, “M” for millions, and “B” for billions. That's why I'll only keep rows containing one of these three characters, before I create a numerical column of the full estimate damage:
+  
+```{r , warning=FALSE , message=F, cache=T}
+sub2 <- subset(raw_data, PROPDMGEXP %in% c("K", "M", "B"))
+sub2 <- sub2[c("EVTYPE", "PROPDMG", "PROPDMGEXP")]
+sub2$EVTYPE <- droplevels(sub2$EVTYPE)
+sub2$PROPDMGEXP <- droplevels(sub2$PROPDMGEXP)
+sub2$estimatDMG <- paste(sub2$PROPDMGEXP)
+sub2$estimatDMG[sub2$estimatDMG=="K"]  <- "1000"              #thousands 
+sub2$estimatDMG[sub2$estimatDMG=="M"]  <- "1000000"           #millions 
+sub2$estimatDMG[sub2$estimatDMG=="B"]  <- "1000000000"        #billions 
+sub2$estimatDMG <- as.numeric(sub2$estimatDMG)
+sub2$estimatDMG <- sub2$estimatDMG * sub2$PROPDMG
+sub2 <- aggregate(estimatDMG~EVTYPE, data=sub2, sum)
+head(sub2,10)
+```
+  
+  Now that we got our column of full damage estimates, let's order the dataframe according to the `estimatDMG` variable:
+```{r , warning=FALSE , message=F, cache=T}
+sub2 <- sub2[order(sub2$estimatDMG, decreasing = T),]
+head(sub2,10)
+```
+  
+And now let's plot the results:
+  
+```{r , warning=FALSE , message=F, cache=T}
+sub2_head <- head(sub2,10)
+ggplot(sub2_head,aes(x = EVTYPE,y = estimatDMG)) + 
+    geom_bar(stat = "identity",position = "dodge") + 
+    theme(axis.text.x = element_text(angle = 90))+
+    ggtitle("Plot 3: Total estimates of property damage\ncaused by the ten most harmful events:") +
+      xlab("Most harmful event types") + ylab("Total estimates")
+```
+
+
+## Results  
+### First Question:  
+  
+Here is the list of the **12 most threatening** type of event:  
+  
+```{r , warning=FALSE , message=F, cache=T}
+paste( unique( droplevels(sub1_ag3$Event_type) ) )
+
+```
+And as we can see in **Plot 1**, `TORNADO`is the most harmful event since it causes the biggest number both within injuries and fatalities, as we can check with the following code: 
+```{r , warning=FALSE , message=F, cache=T}
+paste("The worst event in number of fatalities is ", sub1_ag3[which.max(sub1_ag2$FATALITIES),1])
+paste("The worst event in number of injuries is ", sub1_ag3[which.max(sub1_ag2$INJURIES),1])
+```
+  
+    
+  
+### second question:  
+By looking at the third plot, it's clear that **Floods have the greatest economic consequences**. And more generally, the 10 most damaging types of event are:  
+  
+```{r , warning=FALSE , message=F, cache=T}
+head(paste(sub2$EVTYPE), 10)
+
+```
+
+
+
